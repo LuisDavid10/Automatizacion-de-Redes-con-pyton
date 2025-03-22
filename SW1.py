@@ -30,9 +30,14 @@ def configurar_SW1():
       - Configuración de DHCP Snooping y ajuste de rate-limit en rangos de puertos
       - Configuración de Spanning Tree en modo rapid-pvst
     """
-    comandos_SW1 = [
-        "configure terminal",
-        # --- Creación de VLANs ---
+
+
+    comandos = []
+    # --- Ingreso a modo configuración global ---
+    comandos.append("configure terminal")
+    
+    # --- Creación de VLANs ---
+    comandos += [
         "vlan 10",
         "name alumnos",
         "exit",
@@ -42,7 +47,11 @@ def configurar_SW1():
         "vlan 30",
         "name admon",
         "exit",
-        # --- Asignación de puertos a cada VLAN ---
+    ]
+    
+    # --- Asignación de interfaces a cada VLAN ---
+    # Se asignan los rangos completos para que todos queden en modo acceso
+    comandos += [
         "interface range fa0/1-8",
         "switchport mode access",
         "switchport access vlan 10",
@@ -55,48 +64,103 @@ def configurar_SW1():
         "switchport mode access",
         "switchport access vlan 30",
         "exit",
-        # --- Apagado de puertos no deseados ---
-        # Se apagan puertos dentro de rangos específicos (ejemplo: Fa0/2-8 y Fa0/10-16)
-        "interface range fa0/2-8,fa0/10-16",
+    ]
+    
+    # --- Configuración de port-security en el puerto activo de cada VLAN ---
+    # Solo se configura port-security en el puerto designado.
+    # VLAN 10: activo solo Fa0/1
+    comandos += [
+        "interface fa0/1",
+        "switchport port-security",
+        "switchport port-security maximum 1",
+        "switchport port-security violation shutdown",
+        "switchport port-security mac-address sticky",
+        "exit",
+    ]
+    # VLAN 20: activo solo Fa0/9
+    comandos += [
+        "interface fa0/9",
+        "switchport port-security",
+        "switchport port-security maximum 1",
+        "switchport port-security violation shutdown",
+        "switchport port-security mac-address sticky",
+        "exit",
+    ]
+    # VLAN 30: activo solo Fa0/17
+    comandos += [
+        "interface fa0/17",
+        "switchport port-security",
+        "switchport port-security maximum 1",
+        "switchport port-security violation shutdown",
+        "switchport port-security mac-address sticky",
+        "exit",
+    ]
+    
+    # --- Apagar (shutdown) los puertos NO utilizados en cada VLAN ---
+    # En VLAN 10: se apagan Fa0/2-8
+    comandos += [
+        "interface range fa0/2-8",
         "shutdown",
         "exit",
-        # --- Configuración del puerto trunk ---
+    ]
+    # En VLAN 20: se apagan Fa0/10-16
+    comandos += [
+        "interface range fa0/10-16",
+        "shutdown",
+        "exit",
+    ]
+    # En VLAN 30: se apagan Fa0/18-22
+    comandos += [
+        "interface range fa0/18-22",
+        "shutdown",
+        "exit",
+    ]
+    
+    # --- Configuración del puerto trunk para conectar SW1 con SW2 ---
+    comandos += [
         "interface fa0/24",
         "switchport mode trunk",
         "switchport trunk allowed vlan 10,20,30",
+        "ip dhcp snooping trust",  # marcar como puerto de confianza
         "exit",
-        # --- Configuración de DHCP Snooping ---
+    ]
+    
+    # --- Activación de DHCP Snooping global y para las VLANs específicas ---
+    comandos += [
         "ip dhcp snooping",
         "ip dhcp snooping vlan 10,20,30",
-        # Se configura un límite de tasa en puertos de acceso
-        "interface range fa0/1-23",
+    ]
+    # Se puede configurar límite de tasa en los puertos de acceso si se desea:
+    comandos += [
+        "interface range fa0/1,fa0/9,fa0/17",
         "ip dhcp snooping limit rate 15",
         "exit",
-        # --- Configuración de Spanning Tree ---
-        "spanning-tree mode rapid-pvst",
-        "exit"
     ]
+    
+    # --- Finalizar y guardar la configuración ---
+    comandos.append("end")
+    comandos.append("write memory")
     
     print("\nConectando a SW1 y aplicando configuración...")
     try:
         net_connect = ConnectHandler(**authsw1)
         net_connect.enable()
-
-        output = net_connect.send_config_set(comandos_SW1)
+        output = net_connect.send_config_set(comandos)
         print("\n--- Resultado de la configuración en SW1 ---")
         print(output)
-
-        # Opcional: Verificar configuración de VLANs y puertos
-        verificacion = net_connect.send_command("show vlan brief")
+        
+        verif = net_connect.send_command("show vlan brief")
         print("\n--- Verificación (show vlan brief) en SW1 ---")
-        print(verificacion)
-
-        # Guardar configuración
-        net_connect.save_config()
+        print(verif)
+        
         net_connect.disconnect()
     except Exception as e:
         print(f"Error al configurar SW1: {e}")
 
+
+
+
 if __name__ == "__main__":
     # Ejecutar la configuración en SW2
     configurar_SW1()
+    print("\n--- Configuración completada ---")
